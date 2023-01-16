@@ -1,11 +1,11 @@
 import torch
 
+
 class BCEAcc():
-    def __init__(self, classes_out, device=None):
+    def __init__(self, *args, **kwargs):
         super().__init__()
-        self.correct = torch.zeros(classes_out, device=device)
+        self.correct = 0
         self.total_count = 0
-        self.classes_out = classes_out
 
     def forward(self, x, y):
         bs = x.shape[0]
@@ -15,35 +15,39 @@ class BCEAcc():
         self.total_count += bs
         self.correct += x
 
-        return x.sum().item()/bs/self.classes_out, bs
+        return x.sum().item()/bs/x.numel(), bs
 
     def __call__(self, *args, **kwds):
         return self.forward(*args, **kwds)
 
-    def accuracy(self, mode='primary'):
-        if mode=='primary' : return self.correct.sum()/(self.total_count*self.classes_out)
-        else: return {'acc_val': self.correct/self.total_count}
+    def stats(self, mode='primary'):
+        if mode=='primary' : return self.correct.sum()/(self.total_count*self.correct.numel())
+        else: return {'acc': self.correct/self.total_count}
 
-    def stat(self, detailed=False):
-        print('accuracy: {}'.format(self.accuracy(separate=detailed).tolist()))
+    def db(self):
+        return {
+            'corrects':self.correct,
+            'total_count':self.total_count,
+        }
+
+    def print_stats(self, mode='val'):
+        data = self.stats(mode=mode)
+        for i in data.items():
+            print(i)
+
 
 class BCEMed():
     '''BCEMed calculates count of true posetives, true negatives, total posetives, and total negatives 
     addition to accuracy calculated in BCEAccS'''
-    def __init__(self, classes_out, batch_size=None, device=None):
+    def __init__(self, *args, **kwargs):
         super().__init__()
-        self.correct = torch.zeros(classes_out, device=device)
-        self.tp = torch.zeros(classes_out, device=device)
-        self.tn = torch.zeros(classes_out, device=device)
-        self.pos = torch.zeros(classes_out, device=device)
-        self.neg = torch.zeros(classes_out, device=device)
+        self.correct = 0
+        self.tp = 0
+        self.tn = 0
+        self.pos = 0
+        self.neg = 0
         
         self.total_count = 0
-        self.bs = batch_size
-        self.classes_out = classes_out
-
-    def to(self, device):
-        for i in (self.correct, self.tp, self.tn, self.pos, self.neg): i.to(device)
 
     def forward(self, x, y):
         bs = x.shape[0]
@@ -67,39 +71,34 @@ class BCEMed():
         self.correct += acc
 
         self.total_count += bs
-        return acc.sum().item()/bs/self.classes_out, bs
+        return acc.sum().item()/bs/acc.numel(), bs
 
     def __call__(self, *args, **kwds):
         return self.forward(*args, **kwds)
 
-    def accuracy(self, mode='primary'):
+    def stats(self, mode='primary'):
         if mode=='primary':
-            return self.correct.sum()/(self.total_count*self.classes_out)
+            return self.correct.sum()/(self.total_count*self.correct.numel())
         elif mode=='trn':
-            return {'acc_trn': self.correct.sum()/(self.total_count*self.classes_out)}
+            return {'acc_trn': self.correct.sum()/(self.total_count*self.correct.numel())}
         elif mode=='val':
             return self.acc_med()
         else: raise Exception
 
     def acc_med(self):
         overall = {
-            'acc_val' : self.correct.sum()/(self.total_count*self.classes_out),
+            'acc_val' : self.correct.sum()/(self.total_count*self.correct.numel()),
             'sensetivity': self.tp.sum()/self.pos.sum(),
             'specificity': self.tn.sum()/self.neg.sum(),
             'dice' : (self.tp*self.tn).sum()/((self.pos-self.tp)*(self.neg-self.tn)).sum(),
 
-            'accs' : self.correct/self.total_count,
+            'accs' : self.correct/(self.total_count*self.correct.numel()),
             'senss': self.tp/self.pos,
             'specs': self.tn/self.neg,
             'dices' : (self.tp*self.tn)/((self.pos-self.tp)*(self.neg-self.tn)),
         }
         return overall
         
-    def print_stats(self, mode='val',):
-        data = self.accuracy(mode=mode)
-        for i in data.items():
-            print(i)
-
     def db(self):
         return {
             'corrects':self.correct,
@@ -108,8 +107,14 @@ class BCEMed():
             'total_pos':self.pos,
             'total_neg':self.neg,
             'total_count':self.total_count,
-            'classes_out':self.classes_out,
         }
+
+
+    def print_stats(self, mode='val'):
+        data = self.stats(mode=mode)
+        for i in data.items():
+            print(i)
+
 
 class SoftmaxCorrect():
     """docstring for Softmax_Acc"""
@@ -132,18 +137,17 @@ class SoftmaxCorrect():
         self.correct += acc
         return acc
         
-    def accuracy(self, mode='primary'):
-        return self.correct/self.total_count
+    def stats(self, mode='primary'):
         if mode=='primary':
             return self.correct/self.total_count
-        elif mode=='trn':
+        else:
             return {'acc_trn': self.correct/self.total_count}
-        elif mode=='val':
-            return {'acc_val': self.correct/self.total_count}
-        else: raise Exception
 
-    def print_stats(self, detailed=False):
-        print('accuracy: {}'.format(self.accuracy()))
+    def print_stats(self, mode='val'):
+        data = self.stats(mode=mode)
+        for i in data.items():
+            print(i)
+
 
 class SoftmaxMed():
     """docstring for Softmax_Acc"""
@@ -156,7 +160,6 @@ class SoftmaxMed():
         self.neg = torch.zeros(classes_out)
         
         self.total_count = 0
-        self.bs = batch_size
         self.classes_out = classes_out
 
     def __call__(self, *args, **kwds):
@@ -215,7 +218,7 @@ class SoftmaxMed():
         }
         return overall
         
-    def accuracy(self, mode='primary'):
+    def stats(self, mode='primary'):
         if mode=='primary':
             return self.tp.sum()/self.pos.sum()
         elif mode=='trn':
@@ -224,8 +227,9 @@ class SoftmaxMed():
             return self.acc_med()
         else: raise Exception
 
-    def print_stats(self, mode='val',):
-        data = self.accuracy(mode=mode)
+    def print_stats(self, mode='val'):
+        data = self.stats(mode=mode)
         for i in data.items():
             print(i)
+
 
