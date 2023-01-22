@@ -118,12 +118,15 @@ class BCEMed():
 
 class SoftmaxCorrect():
     """docstring for Softmax_Acc"""
-    def __init__(self, classes_out, batch_size=None):
+    def __init__(self, classes_out:int=None, device=None):
         super().__init__()
+        if classes_out is not None: self.correct = torch.zeros(classes_out, device=device)
+        else: self.correct = 0
+        self.classes_out = classes_out
+
         self.correct = 0
         
         self.total_count = 0
-        self.classes_out = classes_out
 
     def __call__(self, *args, **kwds):
         return self.forward(*args, **kwds)
@@ -132,26 +135,41 @@ class SoftmaxCorrect():
         bs = labels.shape[0]
         self.total_count += bs
         _, preds = torch.max(x, dim=1)
-        preds = (preds==labels).sum()
-        acc = preds/bs
-        self.correct += acc
-        return acc
+
+        if self.classes_out is not None:
+            x = self.one_hot(preds)
+            y = self.one_hot(labels)
+
+            x = torch.relu(torch.sign(x))
+            correct = (x==y).int().sum(dim=0)
+
+        else:
+            correct = (preds==labels).sum()
+
+        self.correct += correct
+        return correct/bs, bs
         
     def stats(self, mode='primary'):
         if mode=='primary':
             return self.correct/self.total_count
         else:
-            return {'acc_trn': self.correct/self.total_count}
+            return {f'acc_{mode}': self.correct/self.total_count}
 
     def print_stats(self, mode='val'):
         data = self.stats(mode=mode)
         for i in data.items():
             print(i)
 
+    def one_hot(self, x):
+        bs = x.shape[0]
+        out = torch.zeros(bs, self.classes_out)
+        out[torch.arange(bs), x] = 1.
+        return out
+
 
 class SoftmaxMed():
     """docstring for Softmax_Acc"""
-    def __init__(self, classes_out, batch_size=None):
+    def __init__(self, classes_out, device=None):
         super().__init__()
         self.correct = torch.zeros(classes_out)
         self.tp = torch.zeros(classes_out)
@@ -166,7 +184,7 @@ class SoftmaxMed():
         return self.forward(*args, **kwds)
 
     def forward(self, x, labels) -> float:
-        bs = labels.shape[0]
+        bs = x.shape[0]
         self.total_count += bs
 
         _, preds = torch.max(x, dim=1)
@@ -174,7 +192,6 @@ class SoftmaxMed():
         x = self.one_hot(preds)
         y = self.one_hot(labels)
 
-        bs = x.shape[0]
         x = torch.relu(torch.sign(x))
         x = (x==y).int()
 
